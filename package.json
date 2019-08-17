@@ -1,0 +1,20 @@
+{
+  "name": "poker",
+  "version": "0.0.1",
+  "scripts": {
+    "start": "tsc-watch --onSuccess \"node ./dist/index.js\"",
+    "build": "tsc"
+  },
+  "description": "Poker engine",
+  "main": "index.js",
+  "license": "MIT",
+  "devDependencies": {
+    "@types/lodash": "^4.14.137",
+    "@types/node": "^12.7.2",
+    "tsc-watch": "^2.4.0",
+    "typescript": "^3.5.3"
+  },
+  "dependencies": {
+    "lodash": "^4.17.15"
+  }
+}
