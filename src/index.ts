@@ -14,15 +14,15 @@ const players: InitialPlayerInterface[] = [
     name: 'Matheus',
     chips: 500,
   },
-  // {
-  //   name: 'Gustavo',
-  //   chips: 500,
-  // },
+  {
+    name: 'Gustavo',
+    chips: 500,
+  },
 ];
 
 const table = new Table({
   players,
-  handsCount: 100,
+  handsCount: 2,
   currency: 'R$',
   gameType: 'holdem',
   gameLimit: 'no-limit',

@@ -4,6 +4,7 @@
 // @todo Rebuy
 // @todo Sitting out
 // @todo Multiplayer
+// @todo Add 'shuffle' method to deck so it can be reused during hands
 
 import { cloneDeep } from 'lodash';
 
@@ -194,6 +195,10 @@ export class Table {
     ];
 
     this.potsActions = [];
+
+    for (let player of this.players) {
+      player.cards = [];
+    }
   }
 
   public seatPlayers(): void {
