@@ -1,13 +1,15 @@
 // @todo All in
 // @todo Side pots
-// @todo Players choices
+// @todo Fold
 // @todo Rebuy
 // @todo Sitting out
 // @todo Multiplayer
 // @todo Add 'shuffle' method to deck so it can be reused during hands
-
+//
 import { cloneDeep } from 'lodash';
+import * as prompts from 'prompts';
 
+import { AbstractRenderer } from './renderers/AbstractRenderer';
 import {
   BOARD_STRUCTURE,
   CARDS_PER_PLAYER,
@@ -26,30 +28,46 @@ import {
   CardValuesType,
   DeckInterface,
   GameLimits,
-  GameOptions,
+  TableOptions,
   GameTypes,
   PlayerInterface,
   TableActionTypes,
-  WinnerInterface,
+  FinalHandInterface,
   PotInterface,
   TablePositionTypes,
   TablePositionInterface,
   InitialPlayerInterface,
   TableCurrencyTypes,
   PotActionOptionsType,
-  PotActionsType,
   PotActionType,
   PlayerInfoInterface,
   PotActionWinInterface,
+  ConfigLogModeType,
+  SetupOptionsInterface,
+  HandCheckerFunction,
+  PlayerOptionsType,
+  PotActionsType,
 } from './interfaces';
 import { checkHoldem } from './checkers/check-holdem';
-import { randomIndex, getCard, getCardFromDeck } from './helpers';
+import {
+  randomIndex,
+  getCard,
+  getCardFromDeck,
+  getWinners,
+  getFinalHand,
+  getValueDisplay,
+} from './helpers';
 
-const LOG = true;
+const LOG = false;
+const RENDER = true;
 
-export class Table {
-  protected options: GameOptions;
-  protected checkers: Record<GameTypes, Function>;
+let stateCount = 200;
+
+export class Table implements AbstractRenderer {
+  protected logMode: ConfigLogModeType;
+
+  protected options: TableOptions;
+  protected checkers: Record<GameTypes, HandCheckerFunction>;
 
   protected gameType: GameTypes;
   protected gameLimit: GameLimits;
@@ -57,9 +75,11 @@ export class Table {
   protected players: PlayerInterface[];
   protected board: BoardInterace[];
   protected deck: DeckInterface;
-  protected winners: WinnerInterface[];
+  protected winners: FinalHandInterface[];
+
   protected tableActionIndex: number;
   protected tableActions: TableActionTypes[];
+
   protected pots: PotInterface[];
   protected history: any[];
   protected stakes: number[];
@@ -67,16 +87,21 @@ export class Table {
   protected positions: TablePositionInterface[];
   protected buttonPlayerIndex: number;
   protected currency: TableCurrencyTypes;
-  protected potsActions: PotActionType[][];
+  // By bet roun and pot
+  protected potsActions: PotActionType[][][];
   protected bettingRoundsCount: number;
   protected bettingRounds: number[];
   protected betsByPlayerAndRound: Record<string, PotActionType[][]>;
-  protected currentBettingRound: number;
-  protected currentBettingPlayer: number;
+  protected currentRound: number;
+  protected currentPlayer: number;
   protected playersInfo: Record<string, PlayerInfoInterface>;
   protected handsCount: number;
+  protected playersOptions: PlayerOptionsType[][];
+  protected lastAggressorIndex: number;
 
-  constructor(options: GameOptions) {
+  constructor(options: TableOptions) {
+    this.logMode = String(process.env.LOG_MODE) as ConfigLogModeType;
+
     this.options = options;
 
     this.gameType = options.gameType;
@@ -93,7 +118,10 @@ export class Table {
     };
 
     this.playersCount = options.players.length;
-    this.players = this.updatePlayers(options.players);
+    this.players = [];
+    this.playersOptions = [];
+    this.lastAggressorIndex = -1;
+    this.currentRound = 0;
 
     this.tableActions = TABLE_ACTIONS[this.gameType];
 
@@ -102,84 +130,107 @@ export class Table {
     this.history = [];
   }
 
-  public start(): void {
-    console.log('');
-    console.log('--- STARTING GAME ---');
-    console.log(
-      this.gameLimit,
-      this.gameType,
-      this.stakes.map(stake => this.getValueDisplay(stake)).join('/'),
-    );
+  public async render() {}
 
-    this.setup();
-    this.update();
+  public async start() {
+    await this.joinPlayers(this.options.players);
+    await this.setup();
+
+    await this.tick();
+
+    // RENDER && (await this.render());
+
+    // await this.update();
   }
 
-  public update(): void {
-    const nextState = this.tableActionIndex + 1;
+  public async tick() {
+    this.tableActionIndex++;
+    await this.update();
+    await this.render();
 
-    if (nextState > this.tableActions.length) {
-      console.log('');
-      console.log('--- HAND FINISHED --');
+    if (this.tableActionIndex < stateCount) {
+      stateCount--;
+      await this.tick();
+    }
+  }
+
+  public async update() {
+    const state = this.tableActions[this.tableActionIndex];
+    // let nextState = this.tableActionIndex + 1;
+
+    if (this.tableActionIndex > this.tableActions.length) {
+      this.log('');
+      this.log('--- HAND FINISHED --');
 
       this.history.push(`Hand #${this.history.length + 1}`);
       const handsLeft = this.handsCount - this.history.length;
 
-      if (handsLeft > 0) {
-        this.setup();
-        this.update();
-        return;
-      } else {
-        console.log();
-        console.log('--- GAME FINISHED ---');
+      // if (handsLeft > 0) {
+      //   // this.setup();
+      //   // this.update();
+      //   return;
+      // } else {
+      //   this.log();
+      //   this.log('--- GAME FINISHED ---');
 
-        this.printPlayersProfits();
-        return;
-      }
+      //   this.printPlayersProfits();
+      //   return;
+      // }
     }
-
-    const state = this.tableActions[this.tableActionIndex];
 
     if (state === 'SEATS') {
-      this.seatPlayers();
+      await this.seatPlayers();
     } else if (state === 'BLINDS') {
-      this.postBlinds();
+      await this.postBlinds();
     } else if (state === 'DEAL') {
-      this.dealCards();
+      await this.dealCards();
     } else if (state === 'BET') {
-      console.log('');
-      console.log('--- BETTING ---', this.currentBettingRound);
-      this.betRound();
+      await this.betRound();
     } else if (state === 'BOARD') {
-      this.dealBoard();
+      await this.dealBoard();
     } else if (state === 'SHOWDOW') {
-      console.log('');
-      console.log('--- SHOWDOW ---');
-      this.checkWinners();
+      await this.log('');
+      await this.log('--- SHOWDOW ---');
+      await this.checkWinners();
+    } else if (state === 'WINNERS') {
+      const res = await prompts({
+        type: 'confirm',
+        message: 'Next hand?',
+        name: 'next',
+        initial: true,
+      });
+
+      await this.setup();
+      await this.tick();
     }
 
-    this.tableActionIndex = nextState;
-    this.update();
+    await new Promise(r => setTimeout(r, 500));
   }
 
-  public setup(): void {
+  public async setup(options?: SetupOptionsInterface) {
     this.bettingRounds = [];
-    this.currentBettingRound = 0;
-    this.currentBettingPlayer = 0;
+    this.currentRound = 0;
+    this.currentPlayer = -1;
     this.betsByPlayerAndRound = {};
 
-    for (let index = 0; index < this.bettingRoundsCount; index++) {
+    this.potsActions = [];
+
+    for (let index = 0; index <= this.bettingRoundsCount; index++) {
       this.bettingRounds[index] = 0;
+      this.potsActions[index] = [];
     }
 
     this.playersInfo = {};
 
     this.board = [];
-    this.deck = this.generateDeck(TOTAL_CARDS);
+
+    const deadCards = (options && options.deadCards) || [];
+
+    this.deck = await this.generateDeck(TOTAL_CARDS, deadCards);
 
     this.winners = [];
 
-    this.tableActionIndex = 0;
+    this.tableActionIndex = -1;
 
     this.positions = [];
     this.buttonPlayerIndex =
@@ -194,14 +245,16 @@ export class Table {
       },
     ];
 
-    this.potsActions = [];
-
     for (let player of this.players) {
       player.cards = [];
+
+      for (let betRound = 0; betRound < this.bettingRoundsCount; betRound++) {
+        player.betsByRound[betRound] = [];
+      }
     }
   }
 
-  public seatPlayers(): void {
+  public async seatPlayers() {
     const otherPlayers = [...this.players];
     const fromButtonPlayers = otherPlayers.splice(this.buttonPlayerIndex + 1);
     const sortedPlayers = fromButtonPlayers.concat(otherPlayers);
@@ -235,6 +288,8 @@ export class Table {
         positionIndex: playerIndex,
       };
 
+      this.playersOptions[playerIndex] = [];
+
       this.betsByPlayerAndRound[player.name] = [];
 
       for (let round = 0; round < this.bettingRoundsCount; round++) {
@@ -242,41 +297,110 @@ export class Table {
       }
     }
 
-    if (LOG) {
-      this.printPositions();
-    }
+    // if (LOG) {
+    //   this.printPositions();
+    // }
   }
 
-  public postBlinds(): void {
-    console.log('');
-    console.log('--- BLINDS ---');
+  public async postBlinds() {
+    await this.log('');
+    await this.log('--- BLINDS ---');
 
     for (let index = 0; index < this.stakes.length; index++) {
       const blindBet = this.stakes[index];
-      const player = this.positions[index].player;
+      const position = this.positions[index];
+      const player = position.player;
 
-      this.potAction({
-        action: 'BET',
+      // this.currentPlayer = index;
+
+      if (position.type === 'BIG_BLIND') {
+        // this.lastAggressorIndex = index;
+      }
+
+      await this.potAction({
+        action: 'BET_BLIND',
         amount: blindBet,
         player,
       });
 
-      console.log(player.getDisplay(), 'posts', this.getValueDisplay(blindBet));
+      await this.log(
+        player.getDisplay(),
+        'posts',
+        getValueDisplay(blindBet, this.currency),
+      );
     }
 
+    this.currentPlayer = this.stakes.length % this.positions.length;
+    // console.log('SETTING NEXT', this.currentPlayer);
+
     if (LOG) {
-      this.printPots();
+      await this.printPots();
     }
   }
 
-  public potAction(options: PotActionOptionsType): void {
+  public async potAction(options: PotActionOptionsType) {
     switch (options.action) {
-      case 'CHECK':
-        break;
+      case 'CHECK': {
+        for (let potIndex = 0; potIndex < this.pots.length; potIndex++) {
+          const pot = this.pots[potIndex];
 
-      case 'BET':
-      case 'CALL':
-        options.player.chips -= options.amount;
+          if (pot.players.includes(options.player) === false) {
+            pot.players.push(options.player);
+          }
+
+          const potAction: PotActionType = {
+            action: options.action,
+            player: options.player,
+            pot,
+          };
+
+          await this.addPotAction({
+            potAction,
+            potIndex,
+          });
+
+          options.player.betsByRound[this.currentRound].push(potAction);
+
+          this.betsByPlayerAndRound[options.player.name][
+            this.currentRound
+          ].push(potAction);
+
+          if (this.lastAggressorIndex < 0) {
+            this.lastAggressorIndex = pot.players.findIndex(
+              player => player.name === options.player.name,
+            );
+          }
+        }
+
+        break;
+      }
+
+      case 'CALL': {
+        let amount = this.bettingRounds[this.currentRound];
+        let totalCall = amount;
+
+        const bets = options.player.betsByRound[this.currentRound].filter(bet =>
+          ['CALL', 'BET', 'BET_BLIND', 'RAISE'].includes(bet.action),
+        );
+
+        const lastBet = bets[bets.length - 1];
+
+        if (lastBet != null) {
+          if (
+            lastBet.action === 'CALL' ||
+            lastBet.action === 'BET' ||
+            lastBet.action === 'BET_BLIND' ||
+            lastBet.action === 'RAISE'
+          ) {
+            amount = amount - lastBet.amount;
+          }
+
+          if (amount === 0) {
+            throw new Error(`Invalid amount 0 for action CALL`);
+          }
+        }
+
+        options.player.chips -= amount;
 
         for (let potIndex = 0; potIndex < this.pots.length; potIndex++) {
           const pot = this.pots[potIndex];
@@ -285,7 +409,53 @@ export class Table {
             pot.players.push(options.player);
           }
 
-          pot.total += options.amount;
+          pot.total += amount;
+
+          const potAction: PotActionType = {
+            action: options.action,
+            player: options.player,
+            amount: totalCall,
+            pot,
+          };
+
+          options.player.betsByRound[this.currentRound].push(potAction);
+
+          await this.addPotAction({
+            potAction,
+            potIndex,
+          });
+
+          this.betsByPlayerAndRound[options.player.name][
+            this.currentRound
+          ].push(potAction);
+        }
+        break;
+      }
+
+      case 'BET':
+      case 'BET_BLIND':
+      case 'RAISE': {
+        let amount = options.amount;
+
+        const lastBet = await this.getLastPlayerBet(options.player);
+
+        if (
+          lastBet &&
+          (lastBet.action === 'BET' || lastBet.action === 'BET_BLIND')
+        ) {
+          amount = amount - lastBet.amount;
+        }
+
+        options.player.chips -= amount;
+
+        for (let potIndex = 0; potIndex < this.pots.length; potIndex++) {
+          const pot = this.pots[potIndex];
+
+          if (pot.players.includes(options.player) === false) {
+            pot.players.push(options.player);
+          }
+
+          pot.total += amount;
 
           const potAction: PotActionType = {
             action: options.action,
@@ -294,25 +464,28 @@ export class Table {
             pot,
           };
 
-          this.updateRoundBiggestBet(options.amount);
+          this.lastAggressorIndex = pot.players.findIndex(
+            player => player.name === options.player.name,
+          );
 
-          this.addPotAction({
+          await this.updateRoundBiggestBet(options.amount);
+
+          options.player.betsByRound[this.currentRound].push(potAction);
+
+          await this.addPotAction({
             potAction,
             potIndex,
           });
 
           this.betsByPlayerAndRound[options.player.name][
-            this.currentBettingRound
+            this.currentRound
           ].push(potAction);
-
-          this.currentBettingPlayer = this.playersInfo[
-            options.player.name
-          ].positionIndex;
         }
 
         break;
+      }
 
-      case 'WIN':
+      case 'WIN': {
         for (let potIndex = 0; potIndex < this.pots.length; potIndex++) {
           const pot = this.pots[potIndex];
           const potTotalPerPlayer = pot.total / options.winners.length;
@@ -321,7 +494,7 @@ export class Table {
             const { player, hand } = winner;
 
             if (pot.players.includes(player) === false) {
-              console.log('Ignoring', player.name, ', not in pot');
+              await this.log('Ignoring', player.name, ', not in pot');
               continue;
             }
 
@@ -331,7 +504,7 @@ export class Table {
               pot,
             };
 
-            this.addPotAction({
+            await this.addPotAction({
               potAction,
               potIndex,
             });
@@ -339,11 +512,14 @@ export class Table {
             player.chips += potTotalPerPlayer;
           }
 
+          pot.players = [];
           pot.total = 0;
         }
-        break;
 
-      case 'FOLD':
+        break;
+      }
+
+      case 'FOLD': {
         for (let potIndex = 0; potIndex < this.pots.length; potIndex++) {
           const pot = this.pots[potIndex];
 
@@ -359,28 +535,29 @@ export class Table {
             pot,
           };
 
-          this.addPotAction({
+          options.player.betsByRound[this.currentRound].push(potAction);
+
+          await this.addPotAction({
             potAction,
             potIndex,
           });
         }
-        break;
 
-      case 'RAISE':
         break;
+      }
 
-      default:
-        throw Error('Invalid pot action: ' + options);
+      default: {
+        throw Error('Invalid pot action: ' + JSON.stringify(options));
+
         break;
+      }
+
+      // this.currentPlayer = (this.currentPlayer + 1) % this.positions.length;
     }
   }
 
-  public updatePlayers(
-    initialPlayers: InitialPlayerInterface[],
-  ): PlayerInterface[] {
+  public async joinPlayers(initialPlayers: InitialPlayerInterface[]) {
     const currency = this.currency;
-
-    const players: PlayerInterface[] = [];
 
     for (let initialPlayer of initialPlayers) {
       const player: PlayerInterface = {
@@ -388,7 +565,8 @@ export class Table {
         cards: [],
         position: 'UNSEATED',
         initialChips: cloneDeep(initialPlayer.chips),
-        getDisplay: function() {
+        betsByRound: [],
+        getDisplay() {
           const positionDisplay =
             this.position === 'UNSEATED'
               ? ''
@@ -398,22 +576,18 @@ export class Table {
         },
       };
 
-      players.push(player);
+      for (let betRound = 0; betRound < this.bettingRoundsCount; betRound++) {
+        player.betsByRound[betRound] = [];
+      }
 
-      console.log(
-        player.getDisplay(),
-        'joined table',
-        // this.getValueDisplay(player.chips),
-      );
+      this.players.push(player);
     }
-
-    return players;
   }
 
-  public generateDeck(
+  public async generateDeck(
     totalCardsToShuffle: number,
-    cardsToIgnore: string[] = [],
-  ): DeckInterface {
+    cardsToIgnore: CardInterface[] = [],
+  ): Promise<DeckInterface> {
     const deck: Map<string, CardInterface> = new Map();
 
     const values = Object.keys(VALUES_RANKING) as CardValuesType[];
@@ -438,7 +612,7 @@ export class Table {
     }
 
     for (let card of cardsToIgnore) {
-      deck.delete(card);
+      deck.delete(card.display);
     }
 
     const cards = Array.from(deck.values());
@@ -449,13 +623,13 @@ export class Table {
     };
   }
 
-  public dealCards(
+  public async dealCards(
     options: {
       ignorePlayers: string[];
     } = { ignorePlayers: [] },
-  ): void {
-    console.log('');
-    console.log('--- DEAL CARDS ---');
+  ) {
+    await this.log('');
+    await this.log('--- DEAL CARDS ---');
 
     const cardsToDeal =
       (this.playersCount - options.ignorePlayers.length) *
@@ -479,83 +653,207 @@ export class Table {
 
         const card = getCardFromDeck(this.deck);
 
-        console.log('Dealing card to', player.name);
+        await this.log('Dealing card to', player.name);
 
         player.cards.push(card);
       }
     }
 
-    LOG && this.printHoldings();
+    LOG && (await this.printHoldings());
   }
 
-  public betRound(): void {
-    const nextBettingPlayerIndex = this.currentBettingPlayer + 1;
+  public async betRound() {
+    if (this.currentPlayer < 0) {
+      // console.log('NO PLAYER');
+      return;
+    }
 
-    let positions = this.positions
-      .slice(nextBettingPlayerIndex)
-      .concat(this.positions.slice(0, nextBettingPlayerIndex));
+    const nextOptions: Set<PlayerOptionsType> = new Set();
 
-    for (let playerIndex = 0; playerIndex < positions.length; playerIndex++) {
-      const position = positions[playerIndex];
-      const player = position.player;
+    const position = this.positions[this.currentPlayer];
 
-      const bets = this.betsByPlayerAndRound[player.name][
-        this.currentBettingRound
-      ];
-      const lastBet = bets[bets.length - 1];
+    const currentBet = await this.getCurrentBet();
+    let lastPlayerBet = await this.getLastPlayerBet(position.player);
 
-      // @todo Make the player choose the amount
-      let amount = 0;
-      let action: PotActionsType = 'BET';
-      const biggestBet = this.bettingRounds[this.currentBettingRound];
+    const hasBetOnPot = currentBet > 0;
+    const hasPlayerBet = lastPlayerBet != null;
+    const isLastAggressor = this.lastAggressorIndex === this.currentPlayer;
 
-      // First time betting.
-      if (lastBet == null) {
-        if (biggestBet > 0) {
-          amount = biggestBet;
-          action = 'CALL';
-        } else {
-          // Big blind
-          amount = this.stakes[1];
-          action = 'BET';
-          // console.log('\n\n\n\n\n-------');
-          // console.log(player.name, 'betting', amount);
-        }
-      } else if (lastBet.action === 'BET' || lastBet.action === 'CALL') {
-        if (lastBet.amount < biggestBet) {
-          amount = biggestBet - lastBet.amount;
-          action = 'CALL';
-        } else if (
-          lastBet.amount === biggestBet &&
-          this.currentBettingRound === 0 &&
-          position.type === 'BIG_BLIND'
-        ) {
-          action = 'CHECK';
-        }
-      }
+    // console.log({
+    //   player: position.player.name,
+    //   currentBet,
+    //   round: this.currentRound,
+    //   hasPlayerBet,
+    //   isLastAggressor,
+    // });
 
-      this.potAction({
-        action,
-        player,
+    // The player hasn't bet yet.
+    if (hasBetOnPot && hasPlayerBet === false) {
+      nextOptions.add('FOLD');
+      nextOptions.add('CALL');
+      nextOptions.add('RAISE');
+    }
+
+    if (
+      hasBetOnPot &&
+      hasPlayerBet &&
+      isLastAggressor &&
+      position.type === 'BIG_BLIND' &&
+      lastPlayerBet &&
+      lastPlayerBet.action === 'BET_BLIND'
+    ) {
+      nextOptions.add('CHECK');
+      nextOptions.add('RAISE');
+    }
+
+    if (hasBetOnPot && hasPlayerBet && isLastAggressor === false) {
+      nextOptions.add('FOLD');
+      nextOptions.add('CALL');
+      nextOptions.add('RAISE');
+    }
+
+    if (hasBetOnPot === false) {
+      nextOptions.add('CHECK');
+      nextOptions.add('BET');
+    }
+
+    const options = Array.from(nextOptions);
+
+    this.playersOptions[this.currentPlayer] = options;
+
+    if (options.length > 0) {
+      const response = await prompts([
+        {
+          type: 'select',
+          name: 'action',
+          message: 'Action',
+          choices: options.map(option => ({ title: option, value: option })),
+        },
+        {
+          type: (_, values) => (values.action === 'BET' ? 'number' : null),
+          name: 'amount',
+          message: `Amount (${this.currency}):`,
+          validate: value => value >= this.stakes[1],
+        },
+        {
+          type: (_, values) => (values.action === 'RAISE' ? 'number' : null),
+          name: 'amount',
+          message: `Amount (${this.currency}):`,
+          validate: value => value > currentBet,
+        },
+      ]);
+
+      const action: PotActionsType = response.action;
+
+      const amount = response.amount;
+
+      await this.potAction({
+        action: response.action,
+        player: position.player,
         amount,
       });
-
-      console.log(
-        player.getDisplay(),
-        action.toLowerCase() + 's',
-        amount > 0 ? this.getValueDisplay(amount) : '',
-      );
     }
 
-    this.currentBettingPlayer = -1;
-    this.currentBettingRound++;
+    lastPlayerBet = await this.getLastPlayerBet(position.player);
 
-    if (LOG) {
-      this.printPots();
+    this.currentPlayer = await this.getNextPlayerIndex();
+    // console.log('SETTING NEXT', this.currentPlayer);
+
+    const nextPlayer = this.positions[this.currentPlayer].player;
+    const nextPlayerLastBet = await this.getLastPlayerBet(nextPlayer);
+
+    let isLastPlayer = false;
+
+    if (isLastAggressor && lastPlayerBet && lastPlayerBet.action === 'CHECK') {
+      isLastPlayer = true;
+    } else if (
+      this.lastAggressorIndex === this.currentPlayer &&
+      nextPlayerLastBet &&
+      nextPlayerLastBet.action !== 'BET_BLIND'
+    ) {
+      isLastPlayer = true;
     }
+
+    if (isLastPlayer) {
+      this.currentPlayer = -1;
+      this.currentRound++;
+      // console.log('LAAAAAAST', { round: this.currentRound });
+      this.lastAggressorIndex = -1;
+
+      for (let index = 0; index < this.positions.length; index++) {
+        this.playersOptions[index] = [];
+      }
+    } else {
+      this.tableActionIndex--;
+    }
+
+    // let positions = this.positions
+    //   .slice(nextBettingPlayerIndex)
+    //   .concat(this.positions.slice(0, nextBettingPlayerIndex));
+
+    // for (let playerIndex = 0; playerIndex < positions.length; playerIndex++) {
+    //   const position = positions[playerIndex];
+    //   const player = position.player;
+
+    //   const bets = this.betsByPlayerAndRound[player.name][
+    //     this.currentBettingRound
+    //   ];
+    //   const lastBet = bets[bets.length - 1];
+
+    //   // @todo Make the player choose the amount
+    //   let amount = 0;
+    //   let action: PotActionsType = 'BET';
+    //   const biggestBet = this.bettingRounds[this.currentBettingRound];
+
+    // console.log('next', position.player.name);
+    //
+    //   // First time betting.
+    //   if (lastBet == null) {
+    //     if (biggestBet > 0) {
+    //       amount = biggestBet;
+    //       action = 'CALL';
+    //     } else {
+    //       // Big blind
+    //       amount = this.stakes[1];
+    //       action = 'BET';
+    //       // this.log('\n\n\n\n\n-------');
+    //       // this.log(player.name, 'betting', amount);
+    //     }
+    //   } else if (lastBet.action === 'BET' || lastBet.action === 'CALL') {
+    //     if (lastBet.amount < biggestBet) {
+    //       amount = biggestBet - lastBet.amount;
+    //       action = 'CALL';
+    //     } else if (
+    //       lastBet.amount === biggestBet &&
+    //       this.currentBettingRound === 0 &&
+    //       position.type === 'BIG_BLIND'
+    //     ) {
+    //       action = 'CHECK';
+    //     }
+    //   }
+
+    //   this.potAction({
+    //     action,
+    //     player,
+    //     amount,
+    //   });
+
+    //   this.log(
+    //     player.getDisplay(),
+    //     action.toLowerCase() + 's',
+    //     amount > 0 ? getValueDisplay(amount, this.currency) : '',
+    //   );
+    // }
+
+    // this.currentBettingPlayer = -1;
+    // this.currentBettingRound++;
+
+    // if (LOG) {
+    //   this.printPots();
+    // }
   }
 
-  public dealBoard(): void {
+  public async dealBoard() {
     const gameBoard = BOARD_STRUCTURE[this.gameType];
     const board = gameBoard[this.board.length];
 
@@ -565,8 +863,8 @@ export class Table {
 
     if (board.discard > 0) {
       if (LOG) {
-        console.log('');
-        console.log('Discarding', board.discard, 'card(s) for', board.name);
+        await this.log('');
+        await this.log('Discarding', board.discard, 'card(s) for', board.name);
       }
 
       for (let i = 0; i < board.discard; i++) {
@@ -584,10 +882,13 @@ export class Table {
 
     this.board.push({ ...board, cards });
 
-    LOG && this.printBoard();
+    this.currentPlayer = 0;
+    // this.currentRound++;
+
+    LOG && (await this.printBoard());
   }
 
-  public checkWinners(): void {
+  public async checkWinners() {
     const boardCards: CardInterface[] = [];
 
     for (let board of this.board) {
@@ -596,41 +897,26 @@ export class Table {
       }
     }
 
-    let winner = null;
+    const hands: FinalHandInterface[] = [];
 
-    let biggestScore = 0;
+    for (let position of this.positions) {
+      const hand = getFinalHand({
+        player: position.player,
+        boardCards,
+        checker: this.checkers[this.gameType],
+      });
 
-    const playersWithScore = this.players.map(player => {
-      const cards = player.cards.concat(boardCards);
+      this.log(
+        hand.player.getDisplay(),
+        'has',
+        hand.hand.name,
+        hand.hand.cards.map(c => c.display),
+      );
 
-      const ranking = this.checkers[this.gameType](player, cards);
-      const score = ranking.handRanking * ranking.cardsRanking;
-
-      if (LOG) {
-        console.log(
-          player.getDisplay(),
-          'has',
-          ranking.name,
-          ranking.cards.map(c => c.display),
-        );
-      }
-
-      if (score > biggestScore) {
-        biggestScore = score;
-      }
-
-      return {
-        player: player,
-        hand: ranking,
-        score,
-      };
-    });
-
-    for (let winner of playersWithScore) {
-      if (winner.score === biggestScore) {
-        this.winners.push(winner);
-      }
+      hands.push(hand);
     }
+
+    this.winners = getWinners(hands);
 
     for (let winner of this.winners) {
       let totalFromPots = 0;
@@ -644,45 +930,38 @@ export class Table {
       }
     }
 
-    this.potAction({
+    await this.potAction({
       action: 'WIN',
       winners: this.winners,
     });
 
-    LOG && this.printWinners();
+    LOG && (await this.printWinners());
   }
 
-  public getValueDisplay(amount: number): string {
-    const rawAmount = Math.abs(amount);
-    const isNegative = amount < 0;
-
-    return `${isNegative ? '-' : ''}${this.currency}${rawAmount}`;
-  }
-
-  public printHoldings(): void {
-    console.log('');
-    console.log('--- PLAYERS ---');
+  public async printHoldings() {
+    await this.log('');
+    await this.log('--- PLAYERS ---');
 
     for (let position of this.positions) {
       const player = position.player;
 
-      console.log(player.getDisplay(), player.cards.map(c => c.display));
+      await this.log(player.getDisplay(), player.cards.map(c => c.display));
     }
   }
 
-  public printBoard(): void {
-    console.log('');
-    console.log('--- BOARD ---');
+  public async printBoard() {
+    await this.log('');
+    await this.log('--- BOARD ---');
 
-    console.log(...this.board.map(board => board.cards.map(c => c.display)));
+    await this.log(...this.board.map(board => board.cards.map(c => c.display)));
   }
 
-  public printWinners(): void {
-    console.log('');
-    console.log('--- WINNERS ---');
+  public async printWinners() {
+    await this.log('');
+    await this.log('--- WINNERS ---');
 
     for (let potIndex = 0; potIndex < this.pots.length; potIndex++) {
-      const winnerAction = this.potsActions[potIndex].find(
+      const winnerAction = this.potsActions[this.currentRound][potIndex].find(
         potAction => potAction.action === 'WIN',
       ) as PotActionWinInterface;
 
@@ -696,10 +975,10 @@ export class Table {
       const action = winnerAction.winners.length > 1 ? 'ties' : 'wins';
 
       for (let winner of winnerAction.winners) {
-        console.log(
+        await this.log(
           winner.player.getDisplay(),
           action,
-          this.getValueDisplay(potTotalPerPlayer),
+          getValueDisplay(potTotalPerPlayer, this.currency),
           'with',
           winner.hand.name,
           winner.hand.cards.map(c => c.display),
@@ -708,21 +987,21 @@ export class Table {
     }
   }
 
-  public printPositions(): void {
-    console.log('');
-    console.log('--- POSITIONS ---');
+  // public async printPositions() {
+  //   this.log('');
+  //   this.log('--- POSITIONS ---');
 
-    for (let position of this.positions) {
-      console.log(position.player.getDisplay(), 'on', position.type);
-    }
-  }
+  //   for (let position of this.positions) {
+  //     this.log(position.player.getDisplay(), 'on', position.type);
+  //   }
+  // }
 
-  public printPots(): void {
-    console.log('');
-    console.log('--- POTS ---');
+  public async printPots() {
+    await this.log('');
+    await this.log('--- POTS ---');
 
     for (let pot of this.pots) {
-      console.log(
+      await this.log(
         pot.type,
         'pot:',
         `${pot.currency}${pot.total}`,
@@ -733,31 +1012,74 @@ export class Table {
     }
   }
 
-  public printPlayersProfits(): void {
-    console.log('');
-    console.log('--- STACKS AFTER', this.handsCount, 'HANDS ---');
+  public async printPlayersProfits() {
+    await this.log('');
+    await this.log('--- STACKS AFTER', this.handsCount, 'HANDS ---');
 
     for (let position of this.positions) {
       const diff = position.player.chips - position.player.initialChips;
 
-      console.log(position.player.getDisplay(), this.getValueDisplay(diff));
+      await this.log(
+        position.player.getDisplay(),
+        getValueDisplay(diff, this.currency),
+      );
     }
   }
 
-  public addPotAction(options: {
+  public async addPotAction(options: {
     potIndex: number;
     potAction: PotActionType;
-  }): void {
-    if (this.potsActions[options.potIndex] == null) {
-      this.potsActions[options.potIndex] = [];
+  }) {
+    if (this.currentRound > this.bettingRoundsCount) {
+      return;
     }
 
-    this.potsActions[options.potIndex].push(cloneDeep(options.potAction));
+    if (this.potsActions[this.currentRound][options.potIndex] == null) {
+      this.potsActions[this.currentRound][options.potIndex] = [];
+    }
+
+    this.potsActions[this.currentRound][options.potIndex].push(
+      cloneDeep(options.potAction),
+    );
   }
 
-  public updateRoundBiggestBet(amount: number): void {
-    if (amount > this.bettingRounds[this.currentBettingRound]) {
-      this.bettingRounds[this.currentBettingRound] = amount;
+  public async updateRoundBiggestBet(amount: number) {
+    if (amount > this.bettingRounds[this.currentRound]) {
+      this.bettingRounds[this.currentRound] = amount;
     }
+  }
+
+  public async log(...args: any[]) {
+    if (this.logMode === 'NULL') {
+      return;
+    }
+
+    if (LOG === false) {
+      return;
+    }
+
+    console.log(...args);
+  }
+
+  public async getCurrentBet(): Promise<number> {
+    return this.bettingRounds[this.currentRound];
+  }
+
+  public async getLastPlayerBet(
+    player: PlayerInterface,
+  ): Promise<PotActionType | null> {
+    const playerBets = this.betsByPlayerAndRound[player.name][
+      this.currentRound
+    ];
+
+    if (playerBets == null) {
+      return null;
+    }
+
+    return playerBets[playerBets.length - 1];
+  }
+
+  public async getNextPlayerIndex(): Promise<number> {
+    return (this.currentPlayer + 1) % this.positions.length;
   }
 }

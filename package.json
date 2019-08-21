@@ -3,18 +3,30 @@
   "version": "0.0.1",
   "scripts": {
     "start": "tsc-watch --onSuccess \"node ./dist/index.js\"",
+    "test": "LOG_MODE=NULL NODE_ENV=testing jest",
     "build": "tsc"
   },
   "description": "Poker engine",
   "main": "index.js",
   "license": "MIT",
   "devDependencies": {
+    "@babel/core": "^7.5.5",
+    "@babel/preset-env": "^7.5.5",
+    "@babel/preset-typescript": "^7.3.3",
+    "@types/chalk": "^2.2.0",
+    "@types/jest": "^24.0.17",
     "@types/lodash": "^4.14.137",
     "@types/node": "^12.7.2",
+    "@types/prompts": "^2.0.1",
+    "babel-jest": "^24.9.0",
+    "jest": "^24.9.0",
+    "ts-jest": "^24.0.2",
     "tsc-watch": "^2.4.0",
     "typescript": "^3.5.3"
   },
   "dependencies": {
-    "lodash": "^4.17.15"
+    "chalk": "^2.4.2",
+    "lodash": "^4.17.15",
+    "prompts": "^2.2.1"
   }
 }

@@ -57,7 +57,14 @@ export function checkStraightFlush(
       const lastCards = Array.from(straightFlush.values());
       const lastCard = lastCards[lastCards.length - 1];
 
-      if (lastCard.score - card.score !== 1) {
+      const distance = lastCard.score - card.score;
+
+      if (distance > 1) {
+        if (straightFlush.size < MAX_HAND_CARDS) {
+          straightFlush.clear();
+          straightFlush.add(card);
+        }
+
         continue;
       }
 

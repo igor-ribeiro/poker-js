@@ -28,10 +28,21 @@ export function checkStraight(
         continue;
       }
 
-      const lastCards = Array.from(straight.values());
+      const lastCards = Array.from(straight);
       const lastCard = lastCards[lastCards.length - 1];
 
-      if (lastCard.score - card.score !== 1) {
+      const distance = lastCard.score - card.score;
+
+      if (distance > 1) {
+        if (straight.size < MAX_HAND_CARDS) {
+          straight.clear();
+          straight.add(card);
+        }
+
+        continue;
+      }
+
+      if (distance === 0) {
         continue;
       }
 

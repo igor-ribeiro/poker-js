@@ -11,10 +11,12 @@ export function checkQuads(
     return null;
   }
 
+  const extraScore = getCardsScore(found.hand.slice(0, 2));
+
   return {
     name: found.name,
     handRanking: found.ranking,
-    cardsRanking: getCardsScore(found.hand),
+    cardsRanking: getCardsScore(found.hand, extraScore),
     cards: found.hand,
   };
 }

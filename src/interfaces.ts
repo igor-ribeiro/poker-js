@@ -46,12 +46,14 @@ export interface DeckInterface {
 export interface InitialPlayerInterface {
   name: string;
   chips: number;
+  cards?: CardInterface[];
 }
 
 export interface PlayerInterface extends InitialPlayerInterface {
   cards: CardInterface[];
   position: TablePositionTypes;
   initialChips: number;
+  betsByRound: PotActionType[][];
   getDisplay: () => string;
 }
 
@@ -61,6 +63,7 @@ export interface BoardStructureInterace {
   name: string;
 }
 
+import { AbstractRenderer } from './renderers/AbstractRenderer';
 export interface BoardInterace {
   cards: CardInterface[];
 }
@@ -71,7 +74,8 @@ export type TableActionTypes =
   | 'DEAL'
   | 'BET'
   | 'BOARD'
-  | 'SHOWDOW';
+  | 'SHOWDOW'
+  | 'WINNERS';
 
 export interface PotInterface {
   type: 'MAIN' | 'SIDE';
@@ -86,7 +90,7 @@ export interface PotActionBaseOptionInterface {
 
 export interface PotActionBetOptionInterface
   extends PotActionBaseOptionInterface {
-  action: 'BET';
+  action: 'BET' | 'BET_BLIND' | 'RAISE';
   amount: number;
 }
 
@@ -96,11 +100,10 @@ export interface PotActionCallOptionInterface
   amount: number;
 }
 
-export interface PotActionRaiseOptionInterface
-  extends PotActionBaseOptionInterface {
-  action: 'RAISE';
-  amount: number;
-}
+// export interface PotActionRaiseOptionInterface extends PotActionBaseOptionInterface {
+//   action: 'RAISE';
+//   amount: number;
+// }
 
 export interface PotActionCheckOptionInterface
   extends PotActionBaseOptionInterface {
@@ -114,7 +117,7 @@ export interface PotActionFoldOptionInterface
 
 export interface PotActionWinOptionInterface {
   action: 'WIN';
-  winners: WinnerInterface[];
+  winners: FinalHandInterface[];
 }
 
 export type PotActionsType =
@@ -129,7 +132,7 @@ export type PotActionOptionsType =
   | PotActionCheckOptionInterface
   | PotActionBetOptionInterface
   | PotActionCallOptionInterface
-  | PotActionRaiseOptionInterface
+  // | PotActionRaiseOptionInterface
   | PotActionFoldOptionInterface
   | PotActionWinOptionInterface;
 
@@ -139,38 +142,44 @@ export interface PotActionBaseInterface {
 }
 
 export interface PotActionBetInterface extends PotActionBaseInterface {
-  action: 'BET';
+  action: 'BET' | 'BET_BLIND' | 'RAISE' | 'CALL';
   amount: number;
 }
 
-export interface PotActionCallInterface extends PotActionBaseInterface {
-  action: 'CALL';
-  amount: number;
+export interface PotActionCheckInterface extends PotActionBaseInterface {
+  action: 'CHECK' | 'FOLD';
 }
 
-export interface PotActionRaiseInterface extends PotActionBaseInterface {
-  action: 'RAISE';
-  amount: number;
-}
+// export interface PotActionCallInterface extends PotActionBaseInterface {
+//   action: 'CALL';
+//   // amount: number;
+// }
 
-export interface PotActionFoldInterface extends PotActionBaseInterface {
-  action: 'FOLD';
-}
+// // export interface PotActionRaiseInterface extends PotActionBaseInterface {
+// //   action: 'RAISE';
+// //   amount: number;
+// // }
+
+// export interface PotActionFoldInterface extends PotActionBaseInterface {
+//   action: 'FOLD';
+// }
 
 export interface PotActionWinInterface {
   action: 'WIN';
-  winners: WinnerInterface[];
+  winners: FinalHandInterface[];
   pot: PotInterface;
+  amount?: number;
 }
 
 export type PotActionType =
   | PotActionBetInterface
-  | PotActionCallInterface
-  | PotActionRaiseInterface
-  | PotActionFoldInterface
+  | PotActionCheckInterface
+  // | PotActionCallInterface
+  // | PotActionRaiseInterface
+  // | PotActionFoldInterface
   | PotActionWinInterface;
 
-export interface GameOptions {
+export interface TableOptions {
   currency: TableCurrencyTypes;
   players: InitialPlayerInterface[];
   gameType: GameTypes;
@@ -179,12 +188,10 @@ export interface GameOptions {
   stakes: number[];
 }
 
-export interface WinnerInterface {
+export interface FinalHandInterface {
   player: PlayerInterface;
-  hand: {
-    name: string;
-    cards: CardInterface[];
-  };
+  hand: HandInterface;
+  score: number;
 }
 
 export interface HandInterface {
@@ -215,3 +222,22 @@ export type TableCurrencyTypes = '$' | 'R$';
 export interface PlayerInfoInterface extends PlayerInterface {
   positionIndex: number;
 }
+
+export type ConfigLogModeType = 'NULL' | 'FILE' | 'TERMINAL';
+
+export interface SetupOptionsInterface {
+  deadCards?: CardInterface[];
+}
+
+export interface GetHandsOptionsInterface {
+  player: PlayerInterface;
+  boardCards: CardInterface[];
+  checker: HandCheckerFunction;
+}
+
+export type HandCheckerFunction = (
+  player: PlayerInterface,
+  cards: CardInterface[],
+) => HandInterface;
+
+export type PlayerOptionsType = Exclude<PotActionsType, 'WIN'>;

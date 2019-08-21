@@ -1,5 +1,5 @@
-import { Table } from './Table';
-import { PlayerInterface, InitialPlayerInterface } from './interfaces';
+import { InitialPlayerInterface } from './interfaces';
+import { TerminalTable } from './TerminalTable';
 
 const players: InitialPlayerInterface[] = [
   {
@@ -14,15 +14,15 @@ const players: InitialPlayerInterface[] = [
     name: 'Matheus',
     chips: 500,
   },
-  {
-    name: 'Gustavo',
-    chips: 500,
-  },
+  // {
+  //   name: 'Gustavo',
+  //   chips: 500,
+  // },
 ];
 
-const table = new Table({
+const table = new TerminalTable({
   players,
-  handsCount: 2,
+  handsCount: 3,
   currency: 'R$',
   gameType: 'holdem',
   gameLimit: 'no-limit',

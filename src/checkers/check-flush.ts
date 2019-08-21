@@ -21,6 +21,8 @@ export function checkFlush(
     countBySuits[card.suit]++;
   });
 
+  // console.log(countBySuits);
+
   const suit = Object.keys(countBySuits).find(
     suit => countBySuits[suit] >= MAX_HAND_CARDS,
   ) as CardSuitsType;

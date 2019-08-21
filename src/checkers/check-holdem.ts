@@ -7,13 +7,14 @@ import { checkQuads } from './check-quads';
 import { checkStraight } from './check-straight';
 import { checkStraightFlush } from './check-straight-flush';
 import { checkTrips } from './check-trips';
-import { sortCardsByValue } from '../helpers';
+import { sortByCardValue } from '../helpers';
+import { InvalidHandError } from '../errors/InvalidHandError';
 
 export function checkHoldem(
   player: PlayerInterface,
   cards: CardInterface[],
-): HandInterface | null {
-  const sorted = sortCardsByValue(cards);
+): HandInterface {
+  const sorted = sortByCardValue(cards);
 
   const checkers = [
     checkStraightFlush,
@@ -35,6 +36,15 @@ export function checkHoldem(
       hand = score;
       break;
     }
+  }
+
+  if (hand == null) {
+    const error = new InvalidHandError();
+
+    error.player = player;
+    error.cards = cards;
+
+    throw error;
   }
 
   return hand;

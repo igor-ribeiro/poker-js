@@ -104,6 +104,7 @@ export const TABLE_ACTIONS: Record<GameTypes, TableActionTypes[]> = {
     'BOARD',
     'BET',
     'SHOWDOW',
+    'WINNERS',
   ],
 };
 

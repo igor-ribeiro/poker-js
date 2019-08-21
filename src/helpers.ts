@@ -1,12 +1,16 @@
-import { VALUES_RANKING, MAX_HAND_CARDS, HANDS_RANKING, SUITS } from './config';
 import {
   CardInterface,
   CardValuesType,
   CardSuitsType,
   DeckInterface,
+  FinalHandInterface,
+  GetHandsOptionsInterface,
+  TableCurrencyTypes,
+  TablePositionTypes,
 } from './interfaces';
+import { VALUES_RANKING, MAX_HAND_CARDS, HANDS_RANKING } from './config';
 
-export function sortCardsByValue(cards: CardInterface[]): CardInterface[] {
+export function sortByCardValue(cards: CardInterface[]): CardInterface[] {
   return [...cards].sort((a, b) => {
     if (a.score > b.score) return -1;
     if (a.score < b.score) return 1;
@@ -18,13 +22,16 @@ export function randomIndex(item: any[]): number {
   return Math.round(Math.random() * (item.length - 1));
 }
 
-export function getCardsScore(cards: CardInterface[]): number {
-  return cards.reduce((score, card) => score + card.score, 0);
+export function getCardsScore(
+  cards: CardInterface[],
+  extra: number = 0,
+): number {
+  return cards.reduce((score, card) => score + card.score, extra);
 }
 
 export function getPairsTripsQuads(
   cards: CardInterface[],
-  count: number,
+  totalRepetitions: number,
 ): {
   name: string;
   ranking: number;
@@ -46,7 +53,7 @@ export function getPairsTripsQuads(
   for (let value of counter.keys()) {
     const count = counter.get(value) || 0;
 
-    if (count <= 1) {
+    if (count < totalRepetitions) {
       continue;
     }
 
@@ -69,8 +76,7 @@ export function getPairsTripsQuads(
   for (let card of cards) {
     const count = counter.get(card.value) || 0;
 
-    // We already added pairs, trips and quads, so here we only care about kickers.
-    if (count > 1) {
+    if (hand.includes(card)) {
       continue;
     }
 
@@ -88,19 +94,35 @@ export function getPairsTripsQuads(
 
   let handType: 'PAIR' | 'TWO_PAIR' | 'TRIPS' | 'QUADS' | null = null;
 
-  if (maxRepetitions === 2 && hand.length === 2) {
+  if (
+    maxRepetitions === 2 &&
+    totalRepetitions === maxRepetitions &&
+    hand.length === 2
+  ) {
     handType = 'PAIR';
   }
 
-  if (maxRepetitions === 2 && hand.length === 4) {
+  if (
+    maxRepetitions === 2 &&
+    totalRepetitions === maxRepetitions &&
+    hand.length === 4
+  ) {
     handType = 'TWO_PAIR';
   }
 
-  if (maxRepetitions === 3 && hand.length === 3) {
+  if (
+    maxRepetitions === 3 &&
+    totalRepetitions === maxRepetitions &&
+    hand.length === 3
+  ) {
     handType = 'TRIPS';
   }
 
-  if (maxRepetitions === 4 && hand.length === 4) {
+  if (
+    maxRepetitions === 4 &&
+    totalRepetitions === maxRepetitions &&
+    hand.length === 4
+  ) {
     handType = 'QUADS';
   }
 
@@ -150,4 +172,66 @@ export function getCard(display: string): CardInterface {
     suit: suit as CardSuitsType,
     score: VALUES_RANKING[value],
   };
+}
+
+export function getFinalHand(
+  options: GetHandsOptionsInterface,
+): FinalHandInterface {
+  const { player, boardCards, checker } = options;
+
+  const cards = player.cards.concat(boardCards);
+
+  const ranking = checker(player, cards);
+  const score = ranking.handRanking * ranking.cardsRanking;
+
+  return {
+    player,
+    hand: ranking,
+    score,
+  };
+}
+
+export function getWinners(hands: FinalHandInterface[]): FinalHandInterface[] {
+  let biggestScore = 0;
+
+  for (let hand of hands) {
+    if (hand.score > biggestScore) {
+      biggestScore = hand.score;
+    }
+  }
+
+  return hands.filter(hand => hand.score === biggestScore);
+}
+
+export function getValueDisplay(
+  amount: number,
+  currency: TableCurrencyTypes,
+): string {
+  const rawAmount = Math.abs(amount);
+  const isNegative = amount < 0;
+
+  return `${isNegative ? '-' : ''}${currency}${rawAmount}`;
+}
+
+export function clearLine(stream: NodeJS.WritableStream): void {
+  if (process.stdout.isTTY) {
+    // stream.write('\x1b[999D\x1b[K');
+    stream.write('\x1Bc');
+  }
+}
+
+export function getPositionDisplay(position: TablePositionTypes) {
+  if (position === 'BIG_BLIND') {
+    return 'BB';
+  }
+
+  if (position === 'SMALL_BLIND') {
+    return 'SB';
+  }
+
+  if (position === 'BUTTON') {
+    return 'BU';
+  }
+
+  return '  ';
 }
