@@ -45,15 +45,23 @@ test('Pair vs Pair (KK vs 88)', () => {
 
   expect(hands[0].player.name).toBe('Player 1');
   expect(hands[0].hand.name).toBe('Pair');
-  expect(hands[0].hand.cards).toEqual(
-    ['K♦', 'K♥', 'J♣', '8♣', '7♥'].map(getCard),
-  );
+  expect(hands[0].hand.cards.map(c => c.display)).toEqual([
+    'K♦',
+    'K♥',
+    'J♣',
+    '8♣',
+    '7♥',
+  ]);
 
   expect(hands[1].player.name).toBe('Player 2');
   expect(hands[1].hand.name).toBe('Pair');
-  expect(hands[1].hand.cards).toEqual(
-    ['8♥', '8♣', 'K♥', 'Q♠', 'J♣'].map(getCard),
-  );
+  expect(hands[1].hand.cards.map(c => c.display)).toEqual([
+    '8♥',
+    '8♣',
+    'K♥',
+    'Q♠',
+    'J♣',
+  ]);
 
   expect(winners.length).toBe(1);
   expect(hands[0].player.name).toBe('Player 1');
@@ -95,18 +103,84 @@ test('Pair vs Pair (TT A vs TT K) [kicker]', () => {
 
   expect(hands[0].player.name).toBe('Player 1');
   expect(hands[0].hand.name).toBe('Pair');
-  expect(hands[0].hand.cards).toEqual(
-    ['10♥', '10♠', 'K♥', '9♠', '7♣'].map(getCard),
-  );
+  expect(hands[0].hand.cards.map(c => c.display)).toEqual([
+    '10♥',
+    '10♠',
+    'K♥',
+    '9♠',
+    '7♣',
+  ]);
 
   expect(hands[1].player.name).toBe('Player 2');
   expect(hands[1].hand.name).toBe('Pair');
-  expect(hands[1].hand.cards).toEqual(
-    ['10♣', '10♠', 'A♣', '9♠', '7♣'].map(getCard),
-  );
+  expect(hands[1].hand.cards.map(c => c.display)).toEqual([
+    '10♣',
+    '10♠',
+    'A♣',
+    '9♠',
+    '7♣',
+  ]);
 
   expect(winners.length).toBe(1);
   expect(winners[0].player.name).toBe('Player 2');
+});
+
+test('Two pair vs Two pair (AA 44 vs QQ JJ)', () => {
+  const players: PlayerInterface[] = [
+    {
+      name: 'Player 1',
+      chips: 100,
+      cards: ['4♣', 'A♣'].map(getCard),
+      initialChips: 100,
+      position: 'SMALL_BLIND',
+      getDisplay: () => '',
+      betsByRound: [],
+    },
+    {
+      name: 'Player 2',
+      chips: 100,
+      cards: ['J♣', 'J♥'].map(getCard),
+      initialChips: 100,
+      position: 'BIG_BLIND',
+      getDisplay: () => '',
+      betsByRound: [],
+    },
+  ];
+
+  const boardCards = ['Q♠', '4♠', 'A♥', '3♥', 'Q♣'].map(getCard);
+
+  const hands = players.map(player =>
+    getFinalHand({
+      player,
+      boardCards,
+      checker: checkHoldem,
+    }),
+  );
+
+  const winners = getWinners(hands);
+
+  expect(hands[0].player.name).toBe('Player 1');
+  expect(hands[0].hand.name).toBe('Two pair');
+  expect(hands[0].hand.cards.map(c => c.display)).toEqual([
+    'A♣',
+    'A♥',
+    'Q♠',
+    'Q♣',
+    '4♣',
+  ]);
+
+  expect(hands[1].player.name).toBe('Player 2');
+  expect(hands[1].hand.name).toBe('Two pair');
+  expect(hands[1].hand.cards.map(c => c.display)).toEqual([
+    'Q♠',
+    'Q♣',
+    'J♣',
+    'J♥',
+    'A♥',
+  ]);
+
+  expect(winners.length).toBe(1);
+  expect(hands[0].player.name).toBe('Player 1');
 });
 
 test('Two pair vs Two pair (AA TT vs JJ 55)', () => {
@@ -145,15 +219,23 @@ test('Two pair vs Two pair (AA TT vs JJ 55)', () => {
 
   expect(hands[0].player.name).toBe('Player 1');
   expect(hands[0].hand.name).toBe('Two pair');
-  expect(hands[0].hand.cards).toEqual(
-    ['A♣', 'A♠', '10♣', '10♠', 'J♥'].map(getCard),
-  );
+  expect(hands[0].hand.cards.map(c => c.display)).toEqual([
+    'A♣',
+    'A♠',
+    '10♣',
+    '10♠',
+    'J♥',
+  ]);
 
   expect(hands[1].player.name).toBe('Player 2');
   expect(hands[1].hand.name).toBe('Two pair');
-  expect(hands[1].hand.cards).toEqual(
-    ['J♣', 'J♥', '5♣', '5♥', 'A♠'].map(getCard),
-  );
+  expect(hands[1].hand.cards.map(c => c.display)).toEqual([
+    'J♣',
+    'J♥',
+    '5♣',
+    '5♥',
+    'A♠',
+  ]);
 
   expect(winners.length).toBe(1);
   expect(hands[0].player.name).toBe('Player 1');
@@ -195,15 +277,23 @@ test('Two pair vs Two pair (AA T vs AA 9) [kicker]', () => {
 
   expect(hands[0].player.name).toBe('Player 1');
   expect(hands[0].hand.name).toBe('Pair');
-  expect(hands[0].hand.cards).toEqual(
-    ['A♣', 'A♥', '10♥', '7♣', '5♦'].map(getCard),
-  );
+  expect(hands[0].hand.cards.map(c => c.display)).toEqual([
+    'A♣',
+    'A♥',
+    '10♥',
+    '7♣',
+    '5♦',
+  ]);
 
   expect(hands[1].player.name).toBe('Player 2');
   expect(hands[1].hand.name).toBe('Pair');
-  expect(hands[1].hand.cards).toEqual(
-    ['A♠', 'A♥', '9♦', '7♣', '5♦'].map(getCard),
-  );
+  expect(hands[1].hand.cards.map(c => c.display)).toEqual([
+    'A♠',
+    'A♥',
+    '9♦',
+    '7♣',
+    '5♦',
+  ]);
 
   expect(winners.length).toBe(1);
   expect(winners[0].player.name).toBe('Player 1');

@@ -204,7 +204,7 @@ export class Table implements AbstractRenderer {
       await this.tick();
     }
 
-    await new Promise(r => setTimeout(r, 500));
+    await new Promise(r => setTimeout(r, 1000));
   }
 
   public async setup(options?: SetupOptionsInterface) {

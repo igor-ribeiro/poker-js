@@ -193,6 +193,7 @@ export function getFinalHand(
 
 export function getWinners(hands: FinalHandInterface[]): FinalHandInterface[] {
   let biggestScore = 0;
+  let biggestHandRanking = 0;
 
   for (let hand of hands) {
     if (hand.score > biggestScore) {

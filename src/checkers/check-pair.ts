@@ -11,12 +11,12 @@ export function checkPair(
     return null;
   }
 
-  const extraScore = getCardsScore(found.hand.slice(0, 2));
+  const tieBraker = getCardsScore(found.hand.slice(0, 2));
 
   return {
     name: found.name,
-    handRanking: found.ranking,
-    cardsRanking: getCardsScore(found.hand, extraScore),
+    handRanking: found.ranking + tieBraker,
+    cardsRanking: getCardsScore(found.hand),
     cards: found.hand,
   };
 }
