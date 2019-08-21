@@ -115,9 +115,14 @@ export interface PotActionFoldOptionInterface
   action: 'FOLD';
 }
 
-export interface PotActionWinOptionInterface {
-  action: 'WIN';
+export interface PotActionWinShowdownOptionInterface {
+  action: 'WIN_SHOWDOW';
   winners: FinalHandInterface[];
+}
+
+export interface PotActionWinNoShowdownOptionInterface {
+  action: 'WIN_NO_SHOWDOW';
+  player: PlayerInterface;
 }
 
 export type PotActionsType =
@@ -126,7 +131,8 @@ export type PotActionsType =
   | 'CALL'
   | 'RAISE'
   | 'FOLD'
-  | 'WIN';
+  | 'WIN_SHOWDOW'
+  | 'WIN_NO_SHOWDOW';
 
 export type PotActionOptionsType =
   | PotActionCheckOptionInterface
@@ -134,7 +140,8 @@ export type PotActionOptionsType =
   | PotActionCallOptionInterface
   // | PotActionRaiseOptionInterface
   | PotActionFoldOptionInterface
-  | PotActionWinOptionInterface;
+  | PotActionWinShowdownOptionInterface
+  | PotActionWinNoShowdownOptionInterface;
 
 export interface PotActionBaseInterface {
   player: PlayerInterface;
@@ -164,9 +171,16 @@ export interface PotActionCheckInterface extends PotActionBaseInterface {
 //   action: 'FOLD';
 // }
 
-export interface PotActionWinInterface {
-  action: 'WIN';
+export interface PotActionWinShowdownInterface {
+  action: 'WIN_SHOWDOW';
   winners: FinalHandInterface[];
+  pot: PotInterface;
+  amount?: number;
+}
+
+export interface PotActionWinNoShowdownInterface {
+  action: 'WIN_NO_SHOWDOW';
+  player: PlayerInterface;
   pot: PotInterface;
   amount?: number;
 }
@@ -177,7 +191,8 @@ export type PotActionType =
   // | PotActionCallInterface
   // | PotActionRaiseInterface
   // | PotActionFoldInterface
-  | PotActionWinInterface;
+  | PotActionWinShowdownInterface
+  | PotActionWinNoShowdownInterface;
 
 export interface TableOptions {
   currency: TableCurrencyTypes;
@@ -240,4 +255,7 @@ export type HandCheckerFunction = (
   cards: CardInterface[],
 ) => HandInterface;
 
-export type PlayerOptionsType = Exclude<PotActionsType, 'WIN'>;
+export type PlayerOptionsType = Exclude<
+  PotActionsType,
+  'WIN_SHOWDOW' | 'WIN_NO_SHOWDOW'
+>;

@@ -10,10 +10,10 @@ const players: InitialPlayerInterface[] = [
     name: 'Lucas',
     chips: 500,
   },
-  {
-    name: 'Matheus',
-    chips: 500,
-  },
+  // {
+  //   name: 'Matheus',
+  //   chips: 500,
+  // },
   // {
   //   name: 'Gustavo',
   //   chips: 500,

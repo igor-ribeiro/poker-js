@@ -41,7 +41,7 @@ import {
   PotActionOptionsType,
   PotActionType,
   PlayerInfoInterface,
-  PotActionWinInterface,
+  PotActionWinShowdownInterface,
   ConfigLogModeType,
   SetupOptionsInterface,
   HandCheckerFunction,
@@ -71,8 +71,11 @@ export class Table implements AbstractRenderer {
 
   protected gameType: GameTypes;
   protected gameLimit: GameLimits;
+
   protected playersCount: number;
   protected players: PlayerInterface[];
+  protected activePlayers: Record<string, boolean>;
+
   protected board: BoardInterace[];
   protected deck: DeckInterface;
   protected winners: FinalHandInterface[];
@@ -245,12 +248,16 @@ export class Table implements AbstractRenderer {
       },
     ];
 
+    this.activePlayers = {};
+
     for (let player of this.players) {
       player.cards = [];
 
       for (let betRound = 0; betRound < this.bettingRoundsCount; betRound++) {
         player.betsByRound[betRound] = [];
       }
+
+      this.activePlayers[player.name] = true;
     }
   }
 
@@ -366,8 +373,8 @@ export class Table implements AbstractRenderer {
           ].push(potAction);
 
           if (this.lastAggressorIndex < 0) {
-            this.lastAggressorIndex = pot.players.findIndex(
-              player => player.name === options.player.name,
+            this.lastAggressorIndex = this.positions.findIndex(
+              pos => pos.player.name === options.player.name,
             );
           }
         }
@@ -485,7 +492,7 @@ export class Table implements AbstractRenderer {
         break;
       }
 
-      case 'WIN': {
+      case 'WIN_SHOWDOW': {
         for (let potIndex = 0; potIndex < this.pots.length; potIndex++) {
           const pot = this.pots[potIndex];
           const potTotalPerPlayer = pot.total / options.winners.length;
@@ -520,14 +527,18 @@ export class Table implements AbstractRenderer {
       }
 
       case 'FOLD': {
+        delete this.activePlayers[options.player.name];
+
+        options.player.cards = [];
+
         for (let potIndex = 0; potIndex < this.pots.length; potIndex++) {
           const pot = this.pots[potIndex];
 
           if (pot.players.includes(options.player) === false) {
-            continue;
+            // continue;
           }
 
-          pot.players = pot.players.filter(player => player === options.player);
+          pot.players = pot.players.filter(player => player !== options.player);
 
           const potAction: PotActionType = {
             action: options.action,
@@ -541,8 +552,60 @@ export class Table implements AbstractRenderer {
             potAction,
             potIndex,
           });
+
+          this.betsByPlayerAndRound[options.player.name][
+            this.currentRound
+          ].push(potAction);
         }
 
+        // Everybody folded
+        if (Object.keys(this.activePlayers).length === 1) {
+          const playerName = Object.keys(this.activePlayers)[0];
+          const winnerPlayer = this.players.find(
+            player => player.name === playerName,
+          );
+
+          if (winnerPlayer == null) {
+            throw new Error(`Player ${playerName} not found`);
+          }
+
+          await this.potAction({
+            action: 'WIN_NO_SHOWDOW',
+            player: winnerPlayer,
+          });
+        }
+
+        break;
+      }
+
+      case 'WIN_NO_SHOWDOW': {
+        for (let potIndex = 0; potIndex < this.pots.length; potIndex++) {
+          const pot = this.pots[potIndex];
+          const player = options.player;
+
+          if (pot.players.includes(player) === false) {
+            await this.log('Ignoring', player.name, ', not in pot');
+            continue;
+          }
+
+          const potAction: PotActionType = {
+            action: options.action,
+            player,
+            pot,
+          };
+
+          await this.addPotAction({
+            potAction,
+            potIndex,
+          });
+
+          this.tableActionIndex = this.tableActions.length - 1;
+
+          player.chips += pot.total;
+
+          pot.players = [];
+          pot.total = 0;
+        }
         break;
       }
 
@@ -664,13 +727,18 @@ export class Table implements AbstractRenderer {
 
   public async betRound() {
     if (this.currentPlayer < 0) {
-      // console.log('NO PLAYER');
       return;
     }
 
     const nextOptions: Set<PlayerOptionsType> = new Set();
 
     const position = this.positions[this.currentPlayer];
+
+    if (position.player.name in this.activePlayers === false) {
+      this.currentPlayer = await this.getNextPlayerIndex();
+      this.tableActionIndex--;
+      return;
+    }
 
     const currentBet = await this.getCurrentBet();
     let lastPlayerBet = await this.getLastPlayerBet(position.player);
@@ -757,7 +825,6 @@ export class Table implements AbstractRenderer {
     lastPlayerBet = await this.getLastPlayerBet(position.player);
 
     this.currentPlayer = await this.getNextPlayerIndex();
-    // console.log('SETTING NEXT', this.currentPlayer);
 
     const nextPlayer = this.positions[this.currentPlayer].player;
     const nextPlayerLastBet = await this.getLastPlayerBet(nextPlayer);
@@ -774,16 +841,23 @@ export class Table implements AbstractRenderer {
       isLastPlayer = true;
     }
 
-    if (isLastPlayer) {
+    const totalActivePlayers = Object.keys(this.activePlayers).length;
+
+    if (isLastPlayer && totalActivePlayers > 1) {
       this.currentPlayer = -1;
       this.currentRound++;
-      // console.log('LAAAAAAST', { round: this.currentRound });
       this.lastAggressorIndex = -1;
 
       for (let index = 0; index < this.positions.length; index++) {
         this.playersOptions[index] = [];
       }
-    } else {
+    }
+
+    if (isLastPlayer && totalActivePlayers === 1) {
+      this.tableActionIndex = this.tableActions.length - 2;
+    }
+
+    if (isLastPlayer === false) {
       this.tableActionIndex--;
     }
 
@@ -882,7 +956,8 @@ export class Table implements AbstractRenderer {
 
     this.board.push({ ...board, cards });
 
-    this.currentPlayer = 0;
+    this.currentPlayer = -1;
+    this.currentPlayer = await this.getNextPlayerIndex();
     // this.currentRound++;
 
     LOG && (await this.printBoard());
@@ -931,7 +1006,7 @@ export class Table implements AbstractRenderer {
     }
 
     await this.potAction({
-      action: 'WIN',
+      action: 'WIN_SHOWDOW',
       winners: this.winners,
     });
 
@@ -962,8 +1037,8 @@ export class Table implements AbstractRenderer {
 
     for (let potIndex = 0; potIndex < this.pots.length; potIndex++) {
       const winnerAction = this.potsActions[this.currentRound][potIndex].find(
-        potAction => potAction.action === 'WIN',
-      ) as PotActionWinInterface;
+        potAction => potAction.action === 'WIN_SHOWDOW',
+      ) as PotActionWinShowdownInterface;
 
       if (winnerAction == null) {
         throw Error('Win pot action not found');
@@ -1080,6 +1155,15 @@ export class Table implements AbstractRenderer {
   }
 
   public async getNextPlayerIndex(): Promise<number> {
-    return (this.currentPlayer + 1) % this.positions.length;
+    const nextIndex = (this.currentPlayer + 1) % this.positions.length;
+
+    const player = this.positions[nextIndex].player;
+
+    if (player.name in this.activePlayers) {
+      return nextIndex;
+    }
+
+    this.currentPlayer = nextIndex;
+    return await this.getNextPlayerIndex();
   }
 }

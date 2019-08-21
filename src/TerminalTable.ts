@@ -1,6 +1,5 @@
 import { Chalk } from 'chalk/types';
 import chalk from 'chalk';
-import * as prompts from 'prompts';
 
 import { AbstractRenderer } from './renderers/AbstractRenderer';
 import { BOARD_STRUCTURE, CARDS_PER_PLAYER } from './config';
@@ -8,15 +7,14 @@ import {
   CardInterface,
   CardSuitsType,
   PotActionType,
-  PotActionsType,
   TablePositionTypes,
-  PotActionWinInterface,
+  PotActionWinShowdownInterface,
+  PotActionWinNoShowdownInterface,
 } from './interfaces';
 import { Table } from './Table';
 import { getValueDisplay } from './helpers';
 
 const MAX_WIDTH = 50;
-
 export class TerminalTable extends Table implements AbstractRenderer {
   public async render() {
     console.clear();
@@ -77,6 +75,17 @@ export class TerminalTable extends Table implements AbstractRenderer {
       chalk
         .bgRgb(0, 0, 0)
         .greenBright(
+          String(' Players: ' + Object.keys(this.activePlayers)).padEnd(
+            50,
+            ' ',
+          ),
+        ),
+    );
+
+    console.log(
+      chalk
+        .bgRgb(0, 0, 0)
+        .greenBright(
           String(' Wating player: ' + position.player.name).padEnd(50, ' '),
         ),
     );
@@ -102,12 +111,15 @@ export class TerminalTable extends Table implements AbstractRenderer {
     const state = this.tableActions[this.tableActionIndex];
     const nextState = this.tableActions[this.tableActionIndex + 1];
 
+    const currentPlayer = this.positions[this.currentPlayer];
+
     const display = [
       '',
       this.gameLimit.toUpperCase(),
       this.gameType.toUpperCase(),
       this.stakes.map(stake => getValueDisplay(stake, this.currency)).join('/'),
-      `[${state} > ${nextState}]`,
+      // `[${state} > ${nextState}]`,
+      currentPlayer && currentPlayer.player.name,
     ].join(' ');
 
     console.log(chalk.bgWhite.black(display));
@@ -155,6 +167,7 @@ export class TerminalTable extends Table implements AbstractRenderer {
     }
 
     console.log(pots.join('\n'));
+    console.log('\n');
   }
 
   public async renderPlayers() {
@@ -238,18 +251,29 @@ export class TerminalTable extends Table implements AbstractRenderer {
           await this.renderSeparator(20),
         ].join('\n'),
       );
+
+      console.log('\n\n');
     }
   }
 
   public async renderWinners() {
-    if (this.winners.length === 0) {
+    const hasShowdownWinners = this.winners.length > 0;
+    const hasNoShowdownWinner = Object.keys(this.activePlayers).length === 1;
+
+    if (hasShowdownWinners === false && hasNoShowdownWinner === false) {
       return;
     }
 
     for (let potIndex = 0; potIndex < this.pots.length; potIndex++) {
-      const winnerAction = this.potsActions[this.currentRound][potIndex].find(
-        potAction => potAction.action === 'WIN',
-      ) as PotActionWinInterface;
+      const winnerAction:
+        | PotActionWinShowdownInterface
+        | PotActionWinNoShowdownInterface = this.potsActions[this.currentRound][
+        potIndex
+      ].find(
+        potAction =>
+          potAction.action === 'WIN_SHOWDOW' ||
+          potAction.action === 'WIN_NO_SHOWDOW',
+      ) as PotActionWinShowdownInterface;
 
       if (winnerAction == null) {
         throw Error('Win pot action not found');
@@ -257,16 +281,36 @@ export class TerminalTable extends Table implements AbstractRenderer {
 
       const pot = winnerAction.pot;
 
-      const potTotalPerPlayer = pot.total / winnerAction.winners.length;
-      const action = winnerAction.winners.length > 1 ? 'ties' : 'wins';
+      const potTotalPerPlayer =
+        winnerAction.action === 'WIN_SHOWDOW'
+          ? pot.total / winnerAction.winners.length
+          : pot.total;
 
-      for (let winner of winnerAction.winners) {
+      const action =
+        winnerAction.action === 'WIN_SHOWDOW' && winnerAction.winners.length > 1
+          ? 'ties'
+          : 'wins';
+
+      if (winnerAction.action === 'WIN_SHOWDOW') {
+        for (let winner of winnerAction.winners) {
+          console.log(
+            winner.player.name,
+            action,
+            getValueDisplay(potTotalPerPlayer, this.currency),
+            'with',
+            winner.hand.name,
+            // winner.hand.cards.map(c => c.display),
+          );
+        }
+      } else {
+        const noShowdownAction = winnerAction as PotActionWinNoShowdownInterface;
+
         console.log(
-          winner.player.name,
+          noShowdownAction.player.name,
           action,
           getValueDisplay(potTotalPerPlayer, this.currency),
-          'with',
-          winner.hand.name,
+          // 'with',
+          // winner.hand.name,
           // winner.hand.cards.map(c => c.display),
         );
       }
@@ -331,6 +375,9 @@ export class TerminalTable extends Table implements AbstractRenderer {
         return ['', 'checks'];
       case 'FOLD':
         return ['', 'folds'];
+      case 'WIN_SHOWDOW':
+      case 'WIN_NO_SHOWDOW':
+        return ['', 'wins'];
       default:
         return ['', ''];
     }
